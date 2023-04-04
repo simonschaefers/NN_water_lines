@@ -7,5 +7,5 @@ Nerual Network for detection of water lines in the German Wadden Sea
   > two networks?
 - evaluate outcome with:
   > smaller Convolutional layers
-  > -out macro network
+  > out macro network
 - investigate effects/layers
