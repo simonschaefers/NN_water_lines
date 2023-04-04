@@ -6,6 +6,6 @@ Nerual Network for detection of water lines in the German Wadden Sea
 - Separate between calm and windy conditions
   > two networks?
 - evaluate outcome with:
-  > smaller Convolutional layers
+  > smaller Convolutional layers\\
   > out macro network
 - investigate effects/layers
