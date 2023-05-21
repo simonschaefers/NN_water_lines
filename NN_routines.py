@@ -377,7 +377,6 @@ def big_picture(model_state,name,thresh = 0.5,macro = True,compare = True,show =
     Transforms = transforms.Compose([transforms.ToPILImage(),transforms.ToTensor()])
     M_Loss = lossFunc(Transforms(Final_Mask),Transforms(Mask))
     perc_error = len(np.where(Mask!=Final_Mask)[0])/len(np.where(mini_lw == 128)[0])*100
-    n-=2
   if show:
     fig, ax = plt.subplots(1,n,figsize = (6*n,12))
     ax[0].imshow(orig[:,:,0],'gray')
