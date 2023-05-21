@@ -227,8 +227,8 @@ def Network_Training(trainLoader,validLoader,n_epochs,learning_rate,title = None
   scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer,gamma = 0.99)    # Updating the loss function (exponential decrease to base gamma = 0.99)
 
   startTime = time.time()               
-  trainSteps = len(trainLoader.dataset)// trainLoader.batch_size                # make training and test loss comparable
-  validSteps  = len(validLoader.dataset) // validLoader.batch_size              
+  trainSteps = len(trainLoader.dataset)/ trainLoader.batch_size                 # make training and test loss comparable
+  validSteps  = len(validLoader.dataset) / validLoader.batch_size             
   H = {'train_loss':[],'valid_loss':[]}                                         # track loss
   saving = 'Model_params/'                                                      # directory for saving
 
