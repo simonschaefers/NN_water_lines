@@ -196,7 +196,7 @@ def splitter(Folder, split = 0.2):
 
 # --------------  create Dataloaders for training and validation  --------------
 
-def Dataloading(Folder,batch_size = 32,macro = False,thresh = 0.5,DEVICE = DEVICE):
+def Dataloading(Folder,batch_size = 32,macro = False,thresh = 0.5):
   Train_Valid = splitter(Folder)
   Transforms = transforms.Compose([transforms.ToPILImage(),transforms.ToTensor()])
                                                                                 # ^ transform images to torch tensors of PIL images to get ready for the model
@@ -218,7 +218,7 @@ def Dataloading(Folder,batch_size = 32,macro = False,thresh = 0.5,DEVICE = DEVIC
 ### Training
 #------------------------  routine to train the u-net  -----------------------
 
-def Network_Training(trainLoader,validLoader,n_epochs,learning_rate,title = None,load = None,macro = False, DEVICE = DEVICE):
+def Network_Training(trainLoader,validLoader,n_epochs,learning_rate,title = None,load = None,macro = False):
   if macro: net = Macro_Net().to(DEVICE)
   else: net = UNet().to(DEVICE)                                                      # initialize the network
   if load: net.load_state_dict(load)                                           # load a state if wanted
