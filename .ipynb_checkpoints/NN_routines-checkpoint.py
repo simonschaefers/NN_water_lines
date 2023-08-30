@@ -518,6 +518,9 @@ def predict_img(name,model_state,lw_path='Supply/lw_mask.png',show = True,save =
 
 def training_dataset(Folder,aug = False,create_ds= True, macro_training = True,macro_epochs = 40,title = 'ma1', micro_training = True,micro_epochs = 20,conv_layers = [[15,3],[15,3]]):
   names = []
+  DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'                         # connecting to GPU (cuda)
+  print('device: '+DEVICE)
+
   if create_ds:
     if 'Training' not in os.listdir('../NN_water_lines'):
         os.mkdir('Training')
@@ -542,7 +545,7 @@ def training_dataset(Folder,aug = False,create_ds= True, macro_training = True,m
   if macro_training: 
     print('macro training started')
     tLoader, vLoader = Dataloading(folder,batch_size = 16, macro = True,thresh = 0.15)                                        # build dataloader
-    H,macro_result = Network_Training(tLoader,vLoader,macro_epochs,0.001,CL = conv_layers[0],macro = True,title =title) # training execution: 20 epochs, learning rate = 0.001
+    H,macro_result = Network_Training(tLoader,vLoader,macro_epochs,0.001,CL = conv_layers[0],macro = True,title =title,DEVICE = DEVICE) # training execution: 20 epochs, learning rate = 0.001
     loss_propagation(H,title =title)                                       # show loss propagation
   else:
     macro_result = torch.load('Model_params/'+title+'_macro_best.pt',map_location=torch.device('cpu'))                          # load model state if no training 
@@ -557,7 +560,7 @@ def training_dataset(Folder,aug = False,create_ds= True, macro_training = True,m
   if micro_training: 
     print('micro training started')
     tLoader, vLoader = Dataloading(folder,macro = False,thresh = 0.5)                                        # build dataloader
-    H,micro_result = Network_Training(tLoader,vLoader,micro_epochs,0.001,CL = conv_layers[1],macro = False,title =title) # training execution: 20 epochs, learning rate = 0.001
+    H,micro_result = Network_Training(tLoader,vLoader,micro_epochs,0.001,CL = conv_layers[1],macro = False,title =title,DEVICE = DEVICE) # training execution: 20 epochs, learning rate = 0.001
     loss_propagation(H,title =title)                                       # 
   #else:
     #micro_result = torch.load('Model_params/'+title+'_best.pt',map_location=torch.device('cpu'))
