@@ -303,7 +303,7 @@ def intensity_field(pix):
             a[i,j] = np.exp(-0.5*((i-(pix-1)/2)**2+(j-(pix-1)/2)**2)/(pix/4)**2)*255
     return a
 
-def big_picture(model_state,name,thresh = 0.5,conv_layers = [[15,3],[15,3]],macro = True,compare = True,show = True,out = False,folder = None):
+def big_picture(model_state,name,thresh = 0.5,conv_layers = [[15,3],[15,3]],macro = True,compare = True,show = True,out = False,folder = None,overwrite_lw = False):
   if folder: Folder = folder
   else: Folder = name
   if macro:
@@ -328,14 +328,16 @@ def big_picture(model_state,name,thresh = 0.5,conv_layers = [[15,3],[15,3]],macr
   for h in tqdm(range(m)):
     for i in range(n):
       orig[h*pix:(h+1)*pix,i*pix:(i+1)*pix] = cv2.imread(Folder+'/training_data/img_train_'+str(name)+'_'+str(h).rjust(2, '0')+str(i).rjust(2, '0')+'.png')
-      pmask,tmask,loss = prediction(Folder+'/training_data/img_train_'+str(name)+'_'+str(h).rjust(2, '0')+str(i).rjust(2, '0')+'.png',model,model_state, macro = macro,compare = compare,thresh = thresh)
+      pmask,tmask,loss = prediction(Folder+'/training_data/img_train_'+str(name)+'_'+str(h).rjust(2, '0')+str(i).rjust(2, '0')+'.png',
+                                    model,model_state, macro = macro,compare = compare,thresh = thresh)
 
       if compare: Mask[h*mpix:(h+1)*mpix,i*mpix:(i+1)*mpix]   = tmask.detach().numpy()*255
       P_Mask[h*mpix:(h+1)*mpix,i*mpix:(i+1)*mpix,0] = pmask.detach().numpy()*255
       Weights[h*mpix:(h+1)*mpix,i*mpix:(i+1)*mpix,0] = intensity_field(mpix)
 
       if h<m-1 and i<n-1:
-        pmask,tmask,loss = prediction(Folder+'/training_data/img_train_'+str(name)+'_'+str(h).rjust(2, '0')+str(i).rjust(2, '0')+'_s.png',model,model_state, macro = macro,compare = compare,thresh = thresh)
+        pmask,tmask,loss = prediction(Folder+'/training_data/img_train_'+str(name)+'_'+str(h).rjust(2, '0')+str(i).rjust(2, '0')+'_s.png',
+                                      model,model_state, macro = macro,compare = compare,thresh = thresh)
 
         P_Mask[int((h+0.5)*mpix):int((h+1.5)*mpix),int((i+0.5)*mpix):int((i+1.5)*mpix),1] = pmask.detach().numpy()*255
         Weights[int((h+0.5)*mpix):int((h+1.5)*mpix),int((i+0.5)*mpix):int((i+1.5)*mpix),1] = intensity_field(mpix)
@@ -345,8 +347,9 @@ def big_picture(model_state,name,thresh = 0.5,conv_layers = [[15,3],[15,3]],macr
   if macro == False:   Final_Mask = shaping_(Final_Mask,thresh = 0.5,nump = True)
   else:                Final_Mask = shaping_(Final_Mask,thresh = thresh,nump = True)
 
-  Final_Mask[mini_lw==255] = 255
-  Final_Mask[mini_lw==0] = 0
+  if overwrite_lw:
+    Final_Mask[mini_lw==255] = 255
+    Final_Mask[mini_lw==0] = 0
   orig[:,:,2] = cv2.resize(Final_Mask, dsize=(pix*n,pix*m), interpolation=cv2.INTER_NEAREST_EXACT)
   lossFunc = nn.BCEWithLogitsLoss()
   n = 5
@@ -440,12 +443,12 @@ def dataset_produce(image,mask,name,macro = True,aug = True):
     overhead_write(image,mask,pix,folder,name,aug)
     
     
-def predict_img(name,model_state,lw_path='Supply/lw_mask.png',show = True,save = True,conv_layers = [[15,3],[15,3]]):
+def predict_img(name,model_state,lw_path='Supply/lw_mask.png',show = True,save = True,conv_layers = [[15,3],[15,3]],only_macro = False):
 
   img_path = 'Image_storage/image_'+name+'.png'
   mask_path = 'Image_storage/mask_'+name+'.png'
 
-  micro_model_state = torch.load('Model_params/'+model_state+'_best.pt',map_location=torch.device('cpu'))                          # load model state if no training 
+  if not only_macro: micro_model_state = torch.load('Model_params/'+model_state+'_best.pt',map_location=torch.device('cpu'))                          # load model state if no training 
   macro_model_state = torch.load('Model_params/'+model_state+'_macro_best.pt',map_location=torch.device('cpu'))                          # load model state if no training 
 
   startTime = time.time()               
@@ -460,43 +463,50 @@ def predict_img(name,model_state,lw_path='Supply/lw_mask.png',show = True,save =
   print('create macro dataset...')
   img,mask = image_process(o_img,o_mask)
   dataset_produce(img,mask,name,aug = False)
-  print('transfer macro prediction...')
-  macro_img = big_picture(macro_model_state,name,macro = True,thresh = 0.15,conv_layers = conv_layers,compare = compare,show = False,out = True)
-  print('create micro dataset...')
-  dataset_produce(macro_img,mask,name,macro = False,aug = False)
-  print('create raw prediction...')
-  micro_img = big_picture(micro_model_state,name,macro = False,thresh = 0.5,conv_layers = conv_layers,compare = compare,show = False,out = True) 
-  print('floodfill...')
-  raw_predict = micro_img[:len(o_img),:len(o_img[0]),2]
-  cv2.imwrite(name+'/raw_prediction_'+name+'.png',raw_predict)
-  if save: cv2.imwrite('Save/raw_prediction_'+name+'.png',raw_predict)
+  if not only_macro: 
+    print('transfer macro prediction...')
+    macro_img = big_picture(macro_model_state,name,macro = True,thresh = 0.15,conv_layers = conv_layers,compare = compare,show = False,out = True)
+    macro_predict = macro_img[:len(o_img),:len(o_img[0]),2]
+    print('create micro dataset...')
+    dataset_produce(macro_img,mask,name,macro = False,aug = False)
+    print('create raw prediction...')
+    micro_img = big_picture(micro_model_state,name,macro = False,thresh = 0.5,conv_layers = conv_layers,compare = compare,show = False,out = True) 
+    print('floodfill...')
+    raw_predict = micro_img[:len(o_img),:len(o_img[0]),2]
+    cv2.imwrite(name+'/raw_prediction_'+name+'.png',raw_predict)
+    if save: cv2.imwrite('Save/raw_prediction_'+name+'.png',raw_predict)
 
-  ff_predict = cv2.imread(name+'/raw_prediction_'+name+'.png',0)
-  cv2.floodFill(ff_predict,None,(0,len(ff_predict[0])-1),128)
-  ff_predict[ff_predict != 128] = 255
-  ff_predict[ff_predict == 128] = 0
-  cv2.imwrite(name+'/ff_prediction_'+name+'.png',ff_predict)
-  if save: cv2.imwrite('Save/ff_prediction_'+name+'.png',ff_predict)
+    ff_predict = cv2.imread(name+'/raw_prediction_'+name+'.png',0)
+    cv2.floodFill(ff_predict,None,(0,len(ff_predict[0])-1),128)
+    ff_predict[ff_predict != 128] = 255
+    ff_predict[ff_predict == 128] = 0
+    cv2.imwrite(name+'/ff_prediction_'+name+'.png',ff_predict)
+    if save: cv2.imwrite('Save/ff_prediction_'+name+'.png',ff_predict)
+      
+    if show:      
+      n = 4
+      if compare:  
+        e_p = len(np.where(o_mask[:,:,0] != raw_predict)[0])/len(np.where(o_lw==128)[0])*100
+        e_ff = len(np.where(o_mask[:,:,0] != ff_predict)[0])/len(np.where(o_lw==128)[0])*100
+        n+=1
 
-  if show:      
-    n = 3
-    if compare:  
-      e_p = len(np.where(o_mask[:,:,0] != raw_predict)[0])/len(np.where(o_lw==128)[0])*100
-      e_ff = len(np.where(o_mask[:,:,0] != ff_predict)[0])/len(np.where(o_lw==128)[0])*100
-      n+=1
+      fig, ax = plt.subplots(1,n,figsize = (30,12))
+      ax[0].imshow(o_img)
+      ax[0].set_title('original img',fontsize = 22)
+      ax[n-3].imshow(macro_predict,'plasma')
+      ax[n-3].set_title('macro prediction',fontsize = 22)
+      ax[n-2].imshow(raw_predict,'plasma')
+      ax[n-2].set_title('raw prediction',fontsize = 22)
+      ax[n-1].imshow(ff_predict,'plasma')
+      ax[n-1].set_title('floodfill prediction',fontsize = 22)
+      if compare: 
+        ax[1].imshow(o_mask)
+        ax[1].set_title('original mask',fontsize = 22)    
+        ax[n-2].set_title('prediction, %1.1f pc error on lw-mask'%e_p,fontsize = 22)
+        ax[n-1].set_title('floodfill, %1.1f pc error on lw-mask'%e_ff,fontsize = 22)
 
-    fig, ax = plt.subplots(1,n,figsize = (30,12))
-    ax[0].imshow(o_img)
-    ax[0].set_title('original img',fontsize = 22)    
-    ax[n-2].imshow(raw_predict,'plasma')
-    ax[n-2].set_title('raw prediction',fontsize = 22)
-    ax[n-1].imshow(ff_predict,'plasma')
-    ax[n-1].set_title('floodfill prediction',fontsize = 22)
-    if compare: 
-      ax[1].imshow(o_mask)
-      ax[1].set_title('original mask',fontsize = 22)    
-      ax[n-2].set_title('prediction, %1.1f pc error on lw-mask'%e_p,fontsize = 22)
-      ax[n-1].set_title('floodfill, %1.1f pc error on lw-mask'%e_ff,fontsize = 22)
+  else:
+    macro_img = big_picture(macro_model_state,name,macro = True,thresh = 0.15,conv_layers = conv_layers,compare = compare,show = True,out = True)
 
   print('total time taken for prediction: {:.2f}s'.format(time.time()-startTime))
 
@@ -555,9 +565,14 @@ def training_dataset(Folder,aug = False,create_ds= True, macro_training = True,m
     
 def clear_routine(Save):
     basic = ['Model_params', 'NN_routine.ipynb','NN_routines.py','NN_execution.ipynb', 'README.md', '.git', 'Training_images', 'Test', 'Supply', 'Save', 'Image_storage'] 
-    all_directories =os.listdir('../NN_water_lines')    
-    for directory in all_directories:
+    for directory in os.listdir('../NN_water_lines')  
         if directory not in basic and directory not in Save:
             shutil.rmtree(directory,ignore_errors = True)
+    for state in os.listdir('./Model_params'):
+        if state[-10:-5] == 'epoch':
+            os.remove('Model_params/'+state)
+        elif state[-11:-6] == 'epoch':
+            os.remove('Model_params/'+state)
+        
 
             
