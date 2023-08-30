@@ -14,29 +14,32 @@ from torchvision import transforms
 from torch.utils.data import DataLoader
 from imutils import paths
 from sklearn.model_selection import train_test_split
+import shutil
 
 ## --------------------------------------------  Building Networks  --------------------------------------------  
-### Macro-Net
-# ------  defining macro block module of which the macro-net will be constructed  ------
+### general architecture (Block)
+# ------  defining block module of which the U-Nets will be constructed  ------
 
-class Macro_Block(nn.Module):                                                                                             
-    def __init__(self,inChannels,outChannels):                                  # allow varying input and output channels
+class Block(nn.Module):                                                                                             
+    def __init__(self,inChannels,outChannels,cl = [15,3]):                                  # allow varying input and output channels
         super().__init__()
-        self.conv1 = nn.Conv2d(inChannels,outChannels,  15,padding = 'same')     # big convolutional layer (15x15)
-        self.conv2 = nn.Conv2d(outChannels,outChannels, 3,padding = 'same')     # small convolutional layer (3x3)
+        self.conv1 = nn.Conv2d(inChannels,outChannels,  cl[0],padding = 'same')     # big convolutional layer (15x15)
+        self.conv2 = nn.Conv2d(outChannels,outChannels, cl[1],padding = 'same')     # small convolutional layer (3x3)
         self.Dropout = nn.Dropout(p = 0.1)                                      # dropout
         self.BN1 = nn.BatchNorm2d(outChannels,track_running_stats=True)        # first batchnorm      
         self.BN2 = nn.BatchNorm2d(outChannels,track_running_stats=True)        # second batchnorm
         self.relu  = nn.ReLU()                                                  # nonlinear = ReLU
     def forward(self,x): 
         return self.BN2(self.conv2(self.relu(self.BN1(self.conv1(self.Dropout(x))))))
+    
+### Macro-Net
 
 # ----------------  building macro net  ----------------
 
 class Macro_Net(nn.Module):
-    def __init__(self,channels = (3,16,16,1)):                                 # channel sizes (4 because the first is only input and the last is only output)
+    def __init__(self,channels = (3,16,16,1),cl = [15,3]):                                 # channel sizes (4 because the first is only input and the last is only output)
         super().__init__()
-        self.encBlocks = nn.ModuleList([Macro_Block(channels[i],channels[i+1]) for i in range(len(channels) -1)])
+        self.encBlocks = nn.ModuleList([Block(channels[i],channels[i+1],cl = cl) for i in range(len(channels) -1)])
         self.pool = nn.MaxPool2d(2)                                             # Adding Maxpool layer to shrink image size
         self.resize = transforms.Resize(10)
     def forward(self,x):
@@ -48,27 +51,13 @@ class Macro_Net(nn.Module):
         return x
     
 ### U-Net
-# ------  defining a block module of which the U-Net will be constructed  ------
 
-class Block(nn.Module):                                                                                             
-    def __init__(self,inChannels,outChannels):                                  # allow varying input and output channels
-        super().__init__()
-        self.conv1 = nn.Conv2d(inChannels,outChannels, 15,padding = 'same')     # big convolutional layer (15x15)
-        self.conv2 = nn.Conv2d(outChannels,outChannels, 3,padding= 'same')      # small convolutional layer (3x3)
-
-        self.Dropout = nn.Dropout(p = 0.1)                                      # dropout
-        self.BN1 = nn.BatchNorm2d(outChannels,track_running_stats=True)        # first batchnorm      
-        self.BN2 = nn.BatchNorm2d(outChannels,track_running_stats=True)        # second batchnorm
-        self.relu  = nn.ReLU()                                                  # nonlinear = ReLU
-
-    def forward(self,x): 
-        return self.BN2(self.conv2(self.relu(self.BN1(self.conv1(self.Dropout(x))))))
 # ----------------  building encoder that consists of 3 blocks  ----------------
 
 class Encoder(nn.Module):
-    def __init__(self,channels = (3,16,32,64)):                                 # channel sizes (4 because the first is only input and the last is only output)
+    def __init__(self,channels = (3,16,32,64),cl = [15,3]):                                 # channel sizes (4 because the first is only input and the last is only output)
         super().__init__()
-        self.encBlocks = nn.ModuleList([Block(channels[i],channels[i+1]) for i in range(len(channels) -1)])
+        self.encBlocks = nn.ModuleList([Block(channels[i],channels[i+1],cl = cl) for i in range(len(channels) -1)])
         self.pool = nn.MaxPool2d(2)                                             # Adding Maxpool layer to shrink image size
         
     def forward(self,x):
@@ -81,10 +70,10 @@ class Encoder(nn.Module):
 # ----------------  building decoder that consists of 2 blocks  ----------------
 
 class Decoder(nn.Module):
-    def __init__(self,channels = (64,32,16)):                                   # channel sizes (3 because the first is only input and the last is only output)
+    def __init__(self,channels = (64,32,16),cl = [15,3]):                                   # channel sizes (3 because the first is only input and the last is only output)
         super().__init__()
         self.channels = channels
-        self.dec_blocks = nn.ModuleList([Block(channels[i],channels[i+1]) for i in range(len(channels)-1)])
+        self.dec_blocks = nn.ModuleList([Block(channels[i],channels[i+1],cl = cl) for i in range(len(channels)-1)])
         self.upconvs = nn.ModuleList([nn.ConvTranspose2d(channels[i], channels[i + 1], 2, 2) for i in range(len(channels) - 1)])
                                                                                 # ^ upward convolution for larger image size, and lower channel size 
     
@@ -97,7 +86,7 @@ class Decoder(nn.Module):
 # ---------------------------  completing the U-Net  ---------------------------
 
 class UNet(nn.Module):
-    def __init__(self, encChannels = (3,16,32,64),decChannels = (64,32,16),nbClasses = 1):
+    def __init__(self, encChannels = (3,16,32,64),decChannels = (64,32,16),nbClasses = 1,cl = [15,3]):
         super().__init__()
         self.encoder = Encoder(encChannels)                                     # initialize with encoder
         self.decoder = Decoder(decChannels)                                     # and decoder
@@ -112,7 +101,7 @@ class UNet(nn.Module):
     
     
 ## ----------------------------------------  Dataloader routine  -----------------------------------------  
-# ---------  class to create macro dataset that connects images and masks  ---------
+# ---------  class to create dataset that connects images and masks  ---------
 def shaping_(x,thresh = 0.5,nump = False):
     if nump:
       p = x.copy()
@@ -134,52 +123,32 @@ def mask_cut(b, size = (10,10),thresh = 0.5,macro = True):
     return BB
   else: return b
 
-
-class Macro_SegmentationDataset(Dataset):                                            
-    def __init__(self,imagePaths,maskPaths,transform,thresh = 0.5):
+class SegmentationDataset(Dataset):                                            
+    def __init__(self,imagePaths,maskPaths,transform,macro = False,thresh = 0.5):
         self.imagePaths = imagePaths
         self.maskPaths = maskPaths        
-        self.resize = transforms.Resize(128)
         self.transforms = transform
+        
+        self.macro = macro
+        self.resize = transforms.Resize(128)
         self.thresh = thresh
 
     def __len__(self):
         return len(self.imagePaths)
     def __getitem__(self,idx):
        
-        image = cv2.imread(self.imagePaths[idx])                                # I decided to leave the input in a 3 channel format. As it is a BW image, all channels are equal, ->
-        #image[:,:,1] = cv2.imread(self.maskPaths[idx],0)
-        #image[:,:,0] = cv2.imread(self.maskPaths[idx],0)
-        #image[:,:,2] = cv2.imread(self.maskPaths[idx],0)
-
-        mask  = mask_cut(cv2.imread(self.maskPaths[idx],0),thresh = self.thresh)                             # however this leaves place for a further raise in complexity. As for now, a 1 channel input achieves the same result.
+        image = cv2.imread(self.imagePaths[idx]) 
+        mask =  cv2.imread(self.maskPaths[idx],0)                               # I decided to leave the input in a 3 channel format. image layers inclide lw mask and original img ->
+                                                                                # however this leaves place for a further raise in complexity. As for now, a 1 channel input achieves the same result.
         if self.transforms is not None:                                         # this enables transformations on the images and masks (see below)                                       
-            image = self.resize(self.transforms(image))
-            mask  = self.transforms(mask)
-
-    
+            if self.macro: 
+                image = self.resize(self.transforms(image))
+                mask  = self.transforms(mask_cut(mask,thresh = self.thresh)) 
+            else:     
+                image = self.transforms(image)
+                mask  = self.transforms(mask)
         return (image,mask)
 
-# ---------  class to create a dataset that connects images and masks  ---------
-
-class SegmentationDataset(Dataset):                                            
-    def __init__(self,imagePaths,maskPaths,transforms):
-        self.imagePaths = imagePaths
-        self.maskPaths = maskPaths
-        self.transforms = transforms
-        
-    def __len__(self):
-        return len(self.imagePaths)
-    def __getitem__(self,idx):
-       
-        image = cv2.imread(self.imagePaths[idx])                                # I decided to leave the input in a 3 channel format. As it is a BW image, all channels are equal, ->
-        mask  = cv2.imread(self.maskPaths[idx],0)                               # however this leaves place for a further raise in complexity. As for now, a 1 channel input achieves the same result.
-        
-        if self.transforms is not None:                                         # this enables transformations on the images and masks (see below)                                       
-            image = self.transforms(image)
-            mask  = self.transforms(mask)
-    
-        return (image,mask)
     
 # -----------------  split into training and validation data  ------------------
 
@@ -200,12 +169,9 @@ def Dataloading(Folder,batch_size = 32,macro = False,thresh = 0.5,DEVICE = 'cpu'
   Train_Valid = splitter(Folder)
   Transforms = transforms.Compose([transforms.ToPILImage(),transforms.ToTensor()])
                                                                                 # ^ transform images to torch tensors of PIL images to get ready for the model
-  if macro: 
-    trainDS = Macro_SegmentationDataset(Train_Valid[0],Train_Valid[1],Transforms,thresh = thresh)       # combine images and masks and apply transformation 
-    validDS = Macro_SegmentationDataset(Train_Valid[2],Train_Valid[3],Transforms,thresh = thresh)
-  else:
-    trainDS = SegmentationDataset(Train_Valid[0],Train_Valid[1],Transforms)       # combine images and masks and apply transformation 
-    validDS = SegmentationDataset(Train_Valid[2],Train_Valid[3],Transforms)
+  trainDS = SegmentationDataset(Train_Valid[0],Train_Valid[1],Transforms,macro = macro,thresh = thresh)       # combine images and masks and apply transformation 
+  validDS = SegmentationDataset(Train_Valid[2],Train_Valid[3],Transforms,macro = macro,thresh = thresh)
+  
   print(f'[INFO] found {len(trainDS)} examples in the training set')            # check distribution
   print(f'[INFO] found {len(validDS)} examples in the validation set')
 
@@ -214,13 +180,19 @@ def Dataloading(Folder,batch_size = 32,macro = False,thresh = 0.5,DEVICE = 'cpu'
   validLoader = DataLoader(validDS,shuffle = False, batch_size = batch_size, pin_memory= pin_memory,num_workers=os.cpu_count())
   return trainLoader,validLoader
 
+
 ## -----------------------------  Training and visualization routines  ---------------------------  
+
+
+
+
 ### Training
+
 #------------------------  routine to train the u-net  -----------------------
 
-def Network_Training(trainLoader,validLoader,n_epochs,learning_rate,title = None,load = None,macro = False, DEVICE = 'cpu'):
-  if macro: net = Macro_Net().to(DEVICE)
-  else: net = UNet().to(DEVICE)                                                      # initialize the network
+def Network_Training(trainLoader,validLoader,n_epochs,learning_rate,title = None,load = None,macro = False,CL = [15,3], DEVICE = 'cpu'):
+  if macro: net = Macro_Net(cl = CL).to(DEVICE)
+  else: net = UNet(cl = CL).to(DEVICE)                                                      # initialize the network
   if load: net.load_state_dict(load)                                           # load a state if wanted
   lossFunc = nn.BCEWithLogitsLoss()                                             # Binary Cross Entropy as loss function
   optimizer  = torch.optim.Adam(net.parameters(),lr = learning_rate)            # Adam optimizer
@@ -270,8 +242,8 @@ def Network_Training(trainLoader,validLoader,n_epochs,learning_rate,title = None
       if avgValidLoss.cpu().detach().numpy() == min(H['valid_loss']): 
         best_state = deepcopy(net.state_dict())                                # always track best state
 
-      print("[INFO] EPOCH: {}/{}".format(e + 1, n_epochs))
-      print("       Train loss: {:.4f}, Validation loss: {:.4f}".format(avgTrainLoss, avgValidLoss))
+      #print("[INFO] EPOCH: {}/{}".format(e + 1, n_epochs))
+      #print("       Train loss: {:.4f}, Validation loss: {:.4f}".format(avgTrainLoss, avgValidLoss))
 
   if title: 
     if macro: torch.save(best_state,saving+title+'_macro_best.pt')
@@ -295,13 +267,13 @@ def loss_propagation(H,title = None):
     
     
 ### Visualization 
-def prediction(img_path,model_state, macro = False,compare = False,thresh = 0.5):
-  if macro: 
-    model = Macro_Net()
-  else: 
-    model = UNet()
-  model.load_state_dict(model_state)                                            # load state
-  model.eval()                                                                  # set model to evaluate
+def prediction(img_path,model,model_state, macro = False,compare = False,thresh = 0.5):
+  #if macro: 
+  #  model = Macro_Net(cl = conv_layers[0])
+  #else: 
+  #  model = UNet(cl = conv_layers[1])
+  #model.load_state_dict(model_state)                                            # load state
+  #model.eval()                                                                  # set model to evaluate
   if macro: Transforms = transforms.Compose([transforms.ToPILImage(),transforms.ToTensor(),transforms.Resize(128,interpolation = transforms.InterpolationMode.NEAREST)])
   else:     Transforms = transforms.Compose([transforms.ToPILImage(),transforms.ToTensor()])
 
@@ -331,34 +303,39 @@ def intensity_field(pix):
             a[i,j] = np.exp(-0.5*((i-(pix-1)/2)**2+(j-(pix-1)/2)**2)/(pix/4)**2)*255
     return a
 
-def big_picture(model_state,name,thresh = 0.5,macro = True,compare = True,show = True,out = False,folder = None):
+def big_picture(model_state,name,thresh = 0.5,conv_layers = [[15,3],[15,3]],macro = True,compare = True,show = True,out = False,folder = None):
   if folder: Folder = folder
   else: Folder = name
   if macro:
     n,m,pix,mpix = 5,8,640,10
     Folder +='/macro'
-
+    model = Macro_Net(cl = conv_layers[0])
   else:
     n,m,pix,mpix =25,40,128,128
     Folder +='/micro'
-
+    model = UNet(cl = conv_layers[1])
+    
+  model.load_state_dict(model_state)                                            # load state
+  model.eval()                                                                  # set model to evaluate
+    
   orig = np.zeros((m*pix,n*pix,3),dtype = 'uint8')
   Mask = np.zeros((m*mpix,n*mpix),dtype = 'uint8')
   P_Mask = np.zeros((m*mpix,n*mpix,2),dtype = 'uint8')
   Weights = P_Mask.copy()
   Final_Mask = Mask.copy()
 
+
   for h in tqdm(range(m)):
     for i in range(n):
       orig[h*pix:(h+1)*pix,i*pix:(i+1)*pix] = cv2.imread(Folder+'/training_data/img_train_'+str(name)+'_'+str(h).rjust(2, '0')+str(i).rjust(2, '0')+'.png')
-      pmask,tmask,loss = prediction(Folder+'/training_data/img_train_'+str(name)+'_'+str(h).rjust(2, '0')+str(i).rjust(2, '0')+'.png',model_state, macro = macro,compare = compare,thresh = thresh)
+      pmask,tmask,loss = prediction(Folder+'/training_data/img_train_'+str(name)+'_'+str(h).rjust(2, '0')+str(i).rjust(2, '0')+'.png',model,model_state, macro = macro,compare = compare,thresh = thresh)
 
       if compare: Mask[h*mpix:(h+1)*mpix,i*mpix:(i+1)*mpix]   = tmask.detach().numpy()*255
       P_Mask[h*mpix:(h+1)*mpix,i*mpix:(i+1)*mpix,0] = pmask.detach().numpy()*255
       Weights[h*mpix:(h+1)*mpix,i*mpix:(i+1)*mpix,0] = intensity_field(mpix)
 
       if h<m-1 and i<n-1:
-        pmask,tmask,loss = prediction(Folder+'/training_data/img_train_'+str(name)+'_'+str(h).rjust(2, '0')+str(i).rjust(2, '0')+'_s.png',model_state, macro = macro,compare = compare,thresh = thresh)
+        pmask,tmask,loss = prediction(Folder+'/training_data/img_train_'+str(name)+'_'+str(h).rjust(2, '0')+str(i).rjust(2, '0')+'_s.png',model,model_state, macro = macro,compare = compare,thresh = thresh)
 
         P_Mask[int((h+0.5)*mpix):int((h+1.5)*mpix),int((i+0.5)*mpix):int((i+1.5)*mpix),1] = pmask.detach().numpy()*255
         Weights[int((h+0.5)*mpix):int((h+1.5)*mpix),int((i+0.5)*mpix):int((i+1.5)*mpix),1] = intensity_field(mpix)
@@ -440,29 +417,41 @@ def overhead_write(image,mask,pix,folder,name,aug):
                 B = image[int(pix*(i+1/2)):int(pix*(i+3/2)),int(pix*(j+1/2)):int(pix*(j+3/2))]
                 if B[:,:,0].shape == (pix,pix): write_images(B,A,folder,name,i,j,shift = '_s',aug = aug)
  
-'''
+
 def dataset_produce(image,mask,name,macro = True,aug = True):
     if macro: 
-        !mkdir $name
-        !mkdir $name/macro
-        !mkdir $name/macro/training_labels
-        !mkdir $name/macro/training_data
+        if name not in os.listdir('../NN_water_lines'):
+            os.mkdir(name)
+        if 'macro' not in os.listdir(name):
+            os.mkdir(os.path.join(str(name),'macro'))
+            os.mkdir(name+'/macro/training_labels')
+            os.mkdir(name+'/macro/training_data')
         folder = str(name)+'/macro'
         pix = 640   
     else:
-        !mkdir $name
-        !mkdir $name/micro
-        !mkdir $name/micro/training_labels
-        !mkdir $name/micro/training_data
+        if name not in os.listdir('../NN_water_lines'):
+            os.mkdir(name)
+        if 'micro' not in os.listdir(name):
+            os.mkdir(name+'/micro')
+            os.mkdir(name+'/micro/training_labels')
+            os.mkdir(name+'/micro/training_data')
         folder = str(name)+'/micro'
         pix = 128
     overhead_write(image,mask,pix,folder,name,aug)
     
-def predict_img(name,img_path,mask_path,macro_model_state,micro_model_state,lw_path='Supply/lw_mask.png',show = True):
+    
+def predict_img(name,model_state,lw_path='Supply/lw_mask.png',show = True,save = True,conv_layers = [[15,3],[15,3]]):
+
+  img_path = 'Image_storage/image_'+name+'.png'
+  mask_path = 'Image_storage/mask_'+name+'.png'
+
+  micro_model_state = torch.load('Model_params/'+model_state+'_best.pt',map_location=torch.device('cpu'))                          # load model state if no training 
+  macro_model_state = torch.load('Model_params/'+model_state+'_macro_best.pt',map_location=torch.device('cpu'))                          # load model state if no training 
+
   startTime = time.time()               
   print('load image...')
   o_img = cv2.imread(img_path)
-  if mask_path: 
+  if os.path.exists(mask_path):
     print('load mask...')
     o_mask = cv2.imread(mask_path)  
     compare = True  
@@ -472,19 +461,23 @@ def predict_img(name,img_path,mask_path,macro_model_state,micro_model_state,lw_p
   img,mask = image_process(o_img,o_mask)
   dataset_produce(img,mask,name,aug = False)
   print('transfer macro prediction...')
-  macro_img = big_picture(macro_model_state,name,macro = True,thresh = 0.15,compare = compare,show = False,out = True)
+  macro_img = big_picture(macro_model_state,name,macro = True,thresh = 0.15,conv_layers = conv_layers,compare = compare,show = False,out = True)
   print('create micro dataset...')
   dataset_produce(macro_img,mask,name,macro = False,aug = False)
   print('create raw prediction...')
-  micro_img = big_picture(micro_model_state,name,macro = False,thresh = 0.5,compare = compare,show = False,out = True) 
+  micro_img = big_picture(micro_model_state,name,macro = False,thresh = 0.5,conv_layers = conv_layers,compare = compare,show = False,out = True) 
   print('floodfill...')
   raw_predict = micro_img[:len(o_img),:len(o_img[0]),2]
   cv2.imwrite(name+'/raw_prediction_'+name+'.png',raw_predict)
+  if save: cv2.imwrite('Save/raw_prediction_'+name+'.png',raw_predict)
+
   ff_predict = cv2.imread(name+'/raw_prediction_'+name+'.png',0)
   cv2.floodFill(ff_predict,None,(0,len(ff_predict[0])-1),128)
   ff_predict[ff_predict != 128] = 255
   ff_predict[ff_predict == 128] = 0
   cv2.imwrite(name+'/ff_prediction_'+name+'.png',ff_predict)
+  if save: cv2.imwrite('Save/ff_prediction_'+name+'.png',ff_predict)
+
   if show:      
     n = 3
     if compare:  
@@ -507,16 +500,23 @@ def predict_img(name,img_path,mask_path,macro_model_state,micro_model_state,lw_p
 
   print('total time taken for prediction: {:.2f}s'.format(time.time()-startTime))
 
-def training_dataset(Folder,aug = False,create_ds= True, macro_training = True,macro_epochs = 40,title = 'ma1', micro_training = True,micro_epochs = 20):
+
+
+
+
+
+
+def training_dataset(Folder,aug = False,create_ds= True, macro_training = True,macro_epochs = 40,title = 'ma1', micro_training = True,micro_epochs = 20,conv_layers = [[15,3],[15,3]]):
   names = []
   if create_ds:
-    !mkdir Training
-    !mkdir Training/macro
-    !mkdir Training/macro/training_labels
-    !mkdir Training/macro/training_data
-    !mkdir Training/micro
-    !mkdir Training/micro/training_labels
-    !mkdir Training/micro/training_data
+    if 'Training' not in os.listdir('../NN_water_lines'):
+        os.mkdir('Training')
+        os.mkdir('Training/macro')
+        os.mkdir('Training/macro/training_labels')
+        os.mkdir('Training/macro/training_data')
+        os.mkdir('Training/micro')
+        os.mkdir('Training/micro/training_labels')
+        os.mkdir('Training/micro/training_data')
     folder = 'Training/macro'
     for file in sorted(os.listdir(Folder)):
       if file[:5] == 'image' and os.path.exists(Folder+'mask'+file[5:]):
@@ -532,7 +532,7 @@ def training_dataset(Folder,aug = False,create_ds= True, macro_training = True,m
   if macro_training: 
     print('macro training started')
     tLoader, vLoader = Dataloading(folder,batch_size = 16, macro = True,thresh = 0.15)                                        # build dataloader
-    H,macro_result = Network_Training(tLoader,vLoader,macro_epochs,0.001,macro = True,title =title) # training execution: 20 epochs, learning rate = 0.001
+    H,macro_result = Network_Training(tLoader,vLoader,macro_epochs,0.001,CL = conv_layers[0],macro = True,title =title) # training execution: 20 epochs, learning rate = 0.001
     loss_propagation(H,title =title)                                       # show loss propagation
   else:
     macro_result = torch.load('Model_params/'+title+'_macro_best.pt',map_location=torch.device('cpu'))                          # load model state if no training 
@@ -540,25 +540,24 @@ def training_dataset(Folder,aug = False,create_ds= True, macro_training = True,m
   folder = 'Training/micro'
   for name in names:    
     print(name+'   in process')
-    mp_img = big_picture(macro_result,name,macro = True,thresh = 0.15,show = False,out = True,folder = 'Training')
+    mp_img = big_picture(macro_result,name,macro = True,thresh = 0.15,conv_layers = conv_layers,show = False,out = True,folder = 'Training')
     image,mask = image_process(cv2.imread(Folder+'image_'+name+'.png'),cv2.imread(Folder+'mask_'+name+'.png'))
     overhead_write(image,mask,128,folder,name,aug)
 
   if micro_training: 
     print('micro training started')
     tLoader, vLoader = Dataloading(folder,macro = False,thresh = 0.5)                                        # build dataloader
-    H,micro_result = Network_Training(tLoader,vLoader,micro_epochs,0.001,macro = False,title =title) # training execution: 20 epochs, learning rate = 0.001
+    H,micro_result = Network_Training(tLoader,vLoader,micro_epochs,0.001,CL = conv_layers[1],macro = False,title =title) # training execution: 20 epochs, learning rate = 0.001
     loss_propagation(H,title =title)                                       # 
-  else:
-    micro_result = torch.load('Model_params/'+title+'_best.pt',map_location=torch.device('cpu'))
+  #else:
+    #micro_result = torch.load('Model_params/'+title+'_best.pt',map_location=torch.device('cpu'))
 
+    
 def clear_routine(Save):
-    basic = ['Model_params', 'NN_routine.ipynb','NN_routines.py','NN_execution.ipynb', 'README.md', '.git', 'Training', 'Test', 'Supply', 'Save', 'Image_storage']
-    %cd .. 
-    all_directories =os.listdir('NN_water_lines')    
-    %cd ./NN_water_lines
+    basic = ['Model_params', 'NN_routine.ipynb','NN_routines.py','NN_execution.ipynb', 'README.md', '.git', 'Training_images', 'Test', 'Supply', 'Save', 'Image_storage'] 
+    all_directories =os.listdir('../NN_water_lines')    
     for directory in all_directories:
         if directory not in basic and directory not in Save:
-            !rm -r $directory
+            shutil.rmtree(directory,ignore_errors = True)
+
             
-'''
