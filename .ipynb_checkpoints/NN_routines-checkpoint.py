@@ -443,7 +443,7 @@ def dataset_produce(image,mask,name,macro = True,aug = True):
     overhead_write(image,mask,pix,folder,name,aug)
     
     
-def predict_img(name,model_state,lw_path='Supply/lw_mask.png',show = True,save = True,conv_layers = [[15,3],[15,3]],only_macro = False):
+def predict_img(name,model_state,lw_path='Supply/lw_mask.png',show = True,save = False,conv_layers = [[15,3],[15,3]],only_macro = False):
 
   img_path = 'Image_storage/image_'+name+'.png'
   mask_path = 'Image_storage/mask_'+name+'.png'
@@ -492,7 +492,7 @@ def predict_img(name,model_state,lw_path='Supply/lw_mask.png',show = True,save =
 
       fig, ax = plt.subplots(1,n,figsize = (30,12))
       ax[0].imshow(o_img)
-      ax[0].set_title('original img',fontsize = 22)
+      ax[0].set_title('SAR '+name,fontsize = 22)
       ax[n-3].imshow(macro_predict,'plasma')
       ax[n-3].set_title('macro prediction',fontsize = 22)
       ax[n-2].imshow(raw_predict,'plasma')
@@ -502,8 +502,10 @@ def predict_img(name,model_state,lw_path='Supply/lw_mask.png',show = True,save =
       if compare: 
         ax[1].imshow(o_mask)
         ax[1].set_title('original mask',fontsize = 22)    
-        ax[n-2].set_title('prediction, %1.1f pc error on lw-mask'%e_p,fontsize = 22)
-        ax[n-1].set_title('floodfill, %1.1f pc error on lw-mask'%e_ff,fontsize = 22)
+        ax[n-2].set_title('prediction, %1.1f pc error'%e_p,fontsize = 22)
+        ax[n-1].set_title('floodfill, %1.1f pc error'%e_ff,fontsize = 22)
+        
+      plt.savefig('Save/fig_'+name+'_'+model_state+'.png')
 
   else:
     macro_img = big_picture(macro_model_state,name,macro = True,thresh = 0.15,conv_layers = conv_layers,compare = compare,show = True,out = True)
@@ -546,7 +548,7 @@ def training_dataset(Folder,aug = False,create_ds= True, macro_training = True,m
     print('macro training started')
     tLoader, vLoader = Dataloading(folder,batch_size = 16, macro = True,thresh = 0.15)                                        # build dataloader
     H,macro_result = Network_Training(tLoader,vLoader,macro_epochs,0.001,CL = conv_layers[0],macro = True,title =title,DEVICE = DEVICE) # training execution: 20 epochs, learning rate = 0.001
-    loss_propagation(H,title =title)                                       # show loss propagation
+    loss_propagation(H,title =title+'_macro')                                       # show loss propagation
   else:
     macro_result = torch.load('Model_params/'+title+'_macro_best.pt',map_location=torch.device('cpu'))                          # load model state if no training 
   print('transfer started')
@@ -561,7 +563,7 @@ def training_dataset(Folder,aug = False,create_ds= True, macro_training = True,m
     print('micro training started')
     tLoader, vLoader = Dataloading(folder,macro = False,thresh = 0.5)                                        # build dataloader
     H,micro_result = Network_Training(tLoader,vLoader,micro_epochs,0.001,CL = conv_layers[1],macro = False,title =title,DEVICE = DEVICE) # training execution: 20 epochs, learning rate = 0.001
-    loss_propagation(H,title =title)                                       # 
+    loss_propagation(H,title =title+'_micro')                                       # 
   #else:
     #micro_result = torch.load('Model_params/'+title+'_best.pt',map_location=torch.device('cpu'))
 
