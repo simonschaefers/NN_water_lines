@@ -303,7 +303,7 @@ def intensity_field(pix):
             a[i,j] = np.exp(-0.5*((i-(pix-1)/2)**2+(j-(pix-1)/2)**2)/(pix/4)**2)*255
     return a
 
-def big_picture(model_state,name,thresh = 0.5,conv_layers = [[15,3],[15,3]],macro = True,compare = True,show = True,out = False,folder = None,overwrite_lw = False):
+def big_picture(model_state,name,thresh = 0.5,conv_layers = [[15,3],[15,3]],macro = True,compare = True,show = True,out = False,folder = None,overwrite_lw = True):
   if folder: Folder = folder
   else: Folder = name
   if macro:
@@ -397,14 +397,13 @@ def write_images(img,mask,folder,name,i,j,shift,aug = False):
             cv2.imwrite(folder+'/training_labels/label_train_'+str(name)+'_'+str(i).rjust(2, '0')+str(j).rjust(2, '0')+'_180'+str(shift)+'.png', A_u)                    
             cv2.imwrite(folder+'/training_labels/label_train_'+str(name)+'_'+str(i).rjust(2, '0')+str(j).rjust(2, '0')+'_270'+str(shift)+'.png', A_l)     
             
-def image_process(image,mask, macro = True,lw = True):
+def image_process(image,mask, macro = True,lw = 'Supply/lw_mask.png'):
     a = None 
     if macro:
         b = reshape(image,640)    
         if mask is not None: a = reshape(mask,640)
-        if lw:  
-            b[:,:,1] = reshape(cv2.imread('Supply/lw_mask.png'),640)[:,:,0]
-            b[:,:,2] = reshape(cv2.imread('Supply/lw_mask.png'),640)[:,:,0]
+        b[:,:,1] = reshape(cv2.imread(lw),640)[:,:,0]
+        b[:,:,2] = reshape(cv2.imread(lw),640)[:,:,0]
         return b , a
     else: print('error, not applicable on micro')
 
@@ -443,7 +442,7 @@ def dataset_produce(image,mask,name,macro = True,aug = True):
     overhead_write(image,mask,pix,folder,name,aug)
     
     
-def predict_img(name,model_state,lw_path='Supply/lw_mask.png',show = True,save = False,conv_layers = [[15,3],[15,3]],only_macro = False):
+def predict_img(name,model_state,lw_path='Supply/new_lw_mask.png',show = True,save = False,conv_layers = [[15,3],[15,3]],only_macro = False):
 
   img_path = 'Image_storage/image_'+name+'.png'
   mask_path = 'Image_storage/mask_'+name+'.png'
@@ -461,7 +460,7 @@ def predict_img(name,model_state,lw_path='Supply/lw_mask.png',show = True,save =
   else: o_mask,compare = None,False
   o_lw = cv2.imread(lw_path,0)
   print('create macro dataset...')
-  img,mask = image_process(o_img,o_mask)
+  img,mask = image_process(o_img,o_mask,lw = lw_path)
   dataset_produce(img,mask,name,aug = False)
   if not only_macro: 
     print('transfer macro prediction...')
@@ -484,27 +483,33 @@ def predict_img(name,model_state,lw_path='Supply/lw_mask.png',show = True,save =
     if save: cv2.imwrite('Save/ff_prediction_'+name+'.png',ff_predict)
       
     if show:      
-      n = 4
+      n = 5
       if compare:  
         e_p = len(np.where(o_mask[:,:,0] != raw_predict)[0])/len(np.where(o_lw==128)[0])*100
         e_ff = len(np.where(o_mask[:,:,0] != ff_predict)[0])/len(np.where(o_lw==128)[0])*100
         n+=1
 
       fig, ax = plt.subplots(1,n,figsize = (30,12))
+      titlefont = 25
       ax[0].imshow(o_img)
-      ax[0].set_title('SAR '+name,fontsize = 22)
+      ax[0].set_title('SAR '+name,fontsize = titlefont,fontweight="bold")
+      ax[1].imshow(micro_img[:len(o_img),:len(o_img[0]),1],'gray')
+      ax[1].set_title('land-water mask',fontsize = titlefont,fontweight="bold")
       ax[n-3].imshow(macro_predict,'plasma')
-      ax[n-3].set_title('macro prediction',fontsize = 22)
+      ax[n-3].set_title('macro prediction',fontsize = titlefont,fontweight="bold")
       ax[n-2].imshow(raw_predict,'plasma')
-      ax[n-2].set_title('raw prediction',fontsize = 22)
+      ax[n-2].set_title('raw prediction',fontsize = titlefont,fontweight="bold")
       ax[n-1].imshow(ff_predict,'plasma')
-      ax[n-1].set_title('floodfill prediction',fontsize = 22)
+      ax[n-1].set_title('floodfill prediction',fontsize = titlefont,fontweight="bold")
       if compare: 
-        ax[1].imshow(o_mask)
-        ax[1].set_title('original mask',fontsize = 22)    
-        ax[n-2].set_title('prediction, %1.1f pc error'%e_p,fontsize = 22)
-        ax[n-1].set_title('floodfill, %1.1f pc error'%e_ff,fontsize = 22)
-        
+        ax[2].imshow(o_mask)
+        ax[2].set_title('original mask',fontsize = titlefont)    
+        ax[n-2].set_title('prediction, %1.1f pc error'%e_p,fontsize = titlefont,fontweight="bold")
+        ax[n-1].set_title('floodfill, %1.1f pc error'%e_ff,fontsize = titlefont,fontweight="bold")
+      for i in range(n):
+        ax[i].set_xticklabels([])
+        ax[i].set_yticklabels([])
+      #plt.tight_layout()
       plt.savefig('Save/fig_'+name+'_'+model_state+'.png')
 
   else:
@@ -518,7 +523,9 @@ def predict_img(name,model_state,lw_path='Supply/lw_mask.png',show = True,save =
 
 
 
-def training_dataset(Folder,aug = False,create_ds= True, macro_training = True,macro_epochs = 40,title = 'ma1', micro_training = True,micro_epochs = 20,conv_layers = [[15,3],[15,3]]):
+def training_dataset(Folder,aug = False,create_ds= True, macro_training = True,macro_epochs = 40,
+                     title = 'ma1', micro_training = True,micro_epochs = 20,
+                     conv_layers = [[15,3],[15,3]],lw_path = 'Supply/new_lw_mask.png'):
   names = []
   DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'                         # connecting to GPU (cuda)
   print('device: '+DEVICE)
@@ -535,7 +542,7 @@ def training_dataset(Folder,aug = False,create_ds= True, macro_training = True,m
     folder = 'Training/macro'
     for file in sorted(os.listdir(Folder)):
       if file[:5] == 'image' and os.path.exists(Folder+'mask'+file[5:]):
-        image,mask = image_process(cv2.imread(Folder+file),cv2.imread(Folder+'mask'+file[5:]))
+        image,mask = image_process(cv2.imread(Folder+file),cv2.imread(Folder+'mask'+file[5:]),lw = lw_path)
         name = file[-12:-4]
         names.append(name)
         print(name+'   in process')
@@ -556,7 +563,7 @@ def training_dataset(Folder,aug = False,create_ds= True, macro_training = True,m
   for name in names:    
     print(name+'   in process')
     mp_img = big_picture(macro_result,name,macro = True,thresh = 0.15,conv_layers = conv_layers,show = False,out = True,folder = 'Training')
-    image,mask = image_process(cv2.imread(Folder+'image_'+name+'.png'),cv2.imread(Folder+'mask_'+name+'.png'))
+    image,mask = image_process(cv2.imread(Folder+'image_'+name+'.png'),cv2.imread(Folder+'mask_'+name+'.png'),lw = lw_path)
     overhead_write(image,mask,128,folder,name,aug)
 
   if micro_training: 
