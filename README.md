@@ -1,6 +1,8 @@
 # NN_water_lines
 Nerual Network for detection of water lines in the German Wadden Sea
 
+## ! Documentation is not complete, code is sparsely commented !
+
 ### To Do
 - Find mechanism to controll quality of prediction without mask
 - Separate between calm and windy conditions
